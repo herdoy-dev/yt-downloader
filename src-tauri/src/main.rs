@@ -252,6 +252,17 @@ async fn pick_folder(app: AppHandle) -> Option<String> {
     app.dialog().file().blocking_pick_folder().map(|p| p.to_string())
 }
 
+/// Reads the clipboard natively; the webview's own clipboard API is blocked
+/// behind a permission prompt.
+#[tauri::command]
+fn read_clipboard() -> String {
+    Command::new("/usr/bin/pbpaste")
+        .env("LANG", "en_US.UTF-8")
+        .output()
+        .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string())
+        .unwrap_or_default()
+}
+
 #[tauri::command]
 fn reveal(path: String) {
     let _ = Command::new("/usr/bin/open").arg("-R").arg(path).spawn();
@@ -325,6 +336,7 @@ fn main() {
             pick_folder,
             reveal,
             open_file,
+            read_clipboard,
             selftest_report
         ])
         .run(tauri::generate_context!())

@@ -80,6 +80,7 @@
   <h1>TubeGrab</h1>
   <div class="urlrow">
     <input id="url" type="text" placeholder="Paste a YouTube link here" autocomplete="off" spellcheck="false" autofocus>
+    <button id="clear" title="Clear and start a new link">Clear</button>
     <button id="paste">Paste</button>
     <button id="fetch" class="primary">Get options</button>
   </div>
@@ -273,6 +274,8 @@ const firstUsable = (g) => g.options.find((o) => env.ffmpeg || !o.needsFfmpeg) |
 function updateButtons() {
   $("download").disabled = busy || !selected;
   $("fetch").disabled = busy;
+  $("clear").disabled = busy;
+  $("paste").disabled = busy;
   $("choose").disabled = busy;
   $("cancel").classList.toggle("hide", !busy || !info);
 }
@@ -360,11 +363,23 @@ listen("dl-done", (e) => {
 });
 
 $("fetch").onclick = fetchInfo;
+$("clear").onclick = () => {
+  if (busy) return;
+  $("url").value = "";
+  info = null; groups = []; selected = null; lastPath = "";
+  $("error").classList.add("hide"); $("show").classList.add("hide"); $("play").classList.add("hide");
+  setStatus("");
+  render();
+  $("url").focus();
+};
 $("url").addEventListener("keydown", (e) => { if (e.key === "Enter") fetchInfo(); });
 $("url").addEventListener("paste", () => setTimeout(fetchInfo, 0));
 $("paste").onclick = async () => {
-  try { const t = await navigator.clipboard.readText(); if (t) { $("url").value = t.trim(); fetchInfo(); } }
-  catch { $("url").focus(); }
+  if (busy) return;
+  const t = await invoke("read_clipboard");
+  if (!t) { setStatus("The clipboard is empty. Copy a video link first."); $("url").focus(); return; }
+  $("url").value = t;
+  fetchInfo();
 };
 $("download").onclick = startDownload;
 $("cancel").onclick = () => invoke("cancel_download");
