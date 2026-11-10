@@ -1,0 +1,45 @@
+# yt-downloader (TubeGrab)
+
+A small macOS desktop app for downloading YouTube videos. Paste a link, pick a
+resolution and file type, and press Download.
+
+Built with Rust and [Tauri](https://tauri.app); downloads are done by a bundled
+copy of [yt-dlp](https://github.com/yt-dlp/yt-dlp).
+
+## Download options
+
+- **MP4 · H.264** – plays everywhere, including QuickTime (up to 1080p)
+- **MP4 · AV1** and **WebM · VP9** – higher resolutions and smaller files
+- **Audio only** – MP3, M4A or Opus
+
+## Requirements
+
+yt-dlp is included in the app. Two helper tools are used from the system when
+present (the app looks in the Homebrew folders):
+
+- `ffmpeg` – needed to combine separate video and sound (all HD options) and for MP3
+- `deno` – lets yt-dlp see every format YouTube offers
+
+```sh
+brew install ffmpeg deno
+```
+
+## Build
+
+Needs Rust and Node.js.
+
+```sh
+./build.sh
+```
+
+This downloads yt-dlp if needed, builds `TubeGrab.app` and packs it into
+`TubeGrab.dmg`.
+
+The app is not notarized. On another Mac, right-click the app and choose Open
+the first time.
+
+## Project layout
+
+- `ui/index.html` – the whole interface
+- `src-tauri/src/main.rs` – runs yt-dlp and reports progress
+- `build.sh` – builds the app and the DMG

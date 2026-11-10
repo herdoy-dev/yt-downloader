@@ -1,0 +1,386 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>TubeGrab</title>
+<style>
+  :root {
+    --bg: #f5f5f7; --card: #ffffff; --text: #1d1d1f; --muted: #6e6e73;
+    --line: #e2e2e7; --accent: #e0282e; --accent-text: #ffffff;
+    --sel: #fdecec; --ok: #1a8f4c; --field: #ffffff;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #1c1c1e; --card: #2a2a2d; --text: #f5f5f7; --muted: #a1a1a6;
+      --line: #3a3a3e; --accent: #ff453a; --accent-text: #ffffff;
+      --sel: #47272a; --ok: #32d074; --field: #1f1f22;
+    }
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; }
+  body {
+    margin: 0; background: var(--bg); color: var(--text);
+    font: 14px/1.4 -apple-system, BlinkMacSystemFont, "Helvetica Neue", sans-serif;
+    display: flex; flex-direction: column; -webkit-user-select: none; user-select: none; cursor: default;
+  }
+  header { padding: 18px 20px 12px; }
+  h1 { margin: 0 0 12px; font-size: 20px; font-weight: 700; letter-spacing: -0.2px; }
+  .urlrow { display: flex; gap: 8px; }
+  input[type=text] {
+    flex: 1; min-width: 0; padding: 10px 12px; border-radius: 9px; border: 1px solid var(--line);
+    background: var(--field); color: var(--text); font: inherit; outline: none;
+    -webkit-user-select: text; user-select: text;
+  }
+  input[type=text]:focus { border-color: var(--accent); }
+  button {
+    font: inherit; font-weight: 600; border: 1px solid var(--line); background: var(--card);
+    color: var(--text); padding: 9px 14px; border-radius: 9px; cursor: pointer; white-space: nowrap;
+  }
+  button:disabled { opacity: 0.45; cursor: default; }
+  button.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-text); }
+  main { flex: 1; overflow-y: auto; padding: 4px 20px 16px; }
+  .hint { color: var(--muted); text-align: center; margin-top: 70px; }
+  .error { color: var(--accent); background: var(--sel); padding: 10px 12px; border-radius: 9px; -webkit-user-select: text; user-select: text; }
+  .notice { color: var(--muted); font-size: 12.5px; margin: 8px 2px; }
+  .meta { display: flex; gap: 14px; align-items: center; background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 12px; }
+  .meta img { width: 128px; height: 72px; object-fit: cover; border-radius: 7px; background: #000; flex: none; }
+  .meta .t { font-weight: 600; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+  .meta .s { color: var(--muted); font-size: 12.5px; margin-top: 3px; }
+  .tabs { display: flex; gap: 6px; margin: 14px 0 8px; flex-wrap: wrap; }
+  .tab { padding: 6px 12px; border-radius: 999px; font-weight: 600; font-size: 13px; }
+  .tab.on { background: var(--text); color: var(--bg); border-color: var(--text); }
+  .list { background: var(--card); border: 1px solid var(--line); border-radius: 12px; overflow: hidden; }
+  .opt { display: flex; align-items: center; gap: 12px; padding: 10px 14px; border-top: 1px solid var(--line); cursor: pointer; }
+  .opt:first-child { border-top: 0; }
+  .opt.on { background: var(--sel); }
+  .opt.off { opacity: 0.45; cursor: default; }
+  .dot { width: 16px; height: 16px; border-radius: 50%; border: 2px solid var(--muted); flex: none; }
+  .opt.on .dot { border: 5px solid var(--accent); }
+  .opt .q { font-weight: 600; min-width: 92px; }
+  .opt .d { color: var(--muted); font-size: 12.5px; flex: 1; }
+  .opt .z { color: var(--muted); font-size: 12.5px; font-variant-numeric: tabular-nums; }
+  footer { border-top: 1px solid var(--line); background: var(--card); padding: 12px 20px 14px; }
+  .saverow { display: flex; align-items: center; gap: 8px; color: var(--muted); font-size: 12.5px; }
+  .saverow .p { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .saverow button { padding: 5px 10px; font-size: 12.5px; }
+  .actrow { display: flex; align-items: center; gap: 10px; margin-top: 10px; }
+  .status { flex: 1; min-width: 0; font-size: 12.5px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .status.ok { color: var(--ok); font-weight: 600; }
+  .status.bad { color: var(--accent); white-space: normal; }
+  .bar { height: 6px; border-radius: 3px; background: var(--line); overflow: hidden; margin-top: 10px; display: none; }
+  .bar i { display: block; height: 100%; width: 0; background: var(--accent); transition: width 0.2s; }
+  .bar.busy i { width: 35% !important; animation: slide 1.1s infinite ease-in-out; }
+  @keyframes slide { 0% { margin-left: -35%; } 100% { margin-left: 100%; } }
+  .hide { display: none !important; }
+</style>
+</head>
+<body>
+<header>
+  <h1>TubeGrab</h1>
+  <div class="urlrow">
+    <input id="url" type="text" placeholder="Paste a YouTube link here" autocomplete="off" spellcheck="false" autofocus>
+    <button id="paste">Paste</button>
+    <button id="fetch" class="primary">Get options</button>
+  </div>
+</header>
+
+<main>
+  <div id="hint" class="hint">Paste a video link and press <b>Get options</b> to see the available downloads.</div>
+  <div id="error" class="error hide"></div>
+  <div id="result" class="hide">
+    <div class="meta">
+      <img id="thumb" alt="">
+      <div>
+        <div id="title" class="t"></div>
+        <div id="sub" class="s"></div>
+      </div>
+    </div>
+    <div id="tabs" class="tabs"></div>
+    <div id="tabnote" class="notice"></div>
+    <div id="list" class="list"></div>
+    <div id="envnote" class="notice"></div>
+  </div>
+</main>
+
+<footer>
+  <div class="saverow">
+    <span>Save to</span>
+    <span id="dir" class="p"></span>
+    <button id="choose">Change…</button>
+  </div>
+  <div id="bar" class="bar"><i id="fill"></i></div>
+  <div class="actrow">
+    <div id="status" class="status"></div>
+    <button id="show" class="hide">Show in Finder</button>
+    <button id="play" class="hide">Open</button>
+    <button id="cancel" class="hide">Cancel</button>
+    <button id="download" class="primary" disabled>Download</button>
+  </div>
+</footer>
+
+<script>
+const { invoke } = window.__TAURI__.core;
+const { listen } = window.__TAURI__.event;
+const $ = (id) => document.getElementById(id);
+
+let env = { ffmpeg: true, js_runtime: true, download_dir: "" };
+let outDir = "";
+let info = null;       // yt-dlp JSON for the current video
+let groups = [];       // [{ key, name, note, options: [...] }]
+let activeTab = 0;
+let selected = null;   // the chosen option
+let busy = false;
+let lastPath = "";
+let phase = 0, phases = 1, lastDownloaded = 0;
+
+const fmtSize = (b) => {
+  if (!b) return "";
+  const u = ["B", "KB", "MB", "GB"]; let i = 0;
+  while (b >= 1024 && i < 3) { b /= 1024; i++; }
+  return "~" + b.toFixed(b >= 100 || i === 0 ? 0 : 1) + " " + u[i];
+};
+const fmtTime = (s) => {
+  if (!s) return "";
+  s = Math.round(s);
+  const h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60), x = s % 60;
+  return (h ? h + ":" + String(m).padStart(2, "0") : m) + ":" + String(x).padStart(2, "0");
+};
+const sizeOf = (f, dur) => f.filesize || f.filesize_approx || (f.tbr && dur ? f.tbr * 125 * dur : 0);
+
+function family(vcodec) {
+  const v = (vcodec || "").toLowerCase();
+  if (v.startsWith("avc") || v.startsWith("h264")) return "h264";
+  if (v.startsWith("vp9") || v.startsWith("vp09")) return "vp9";
+  if (v.startsWith("av01") || v.startsWith("av1")) return "av1";
+  return "other";
+}
+
+// Turn yt-dlp's raw format list into a few clear choices per file type.
+function buildGroups(d) {
+  const dur = d.duration || 0;
+  const all = (d.formats || []).filter((f) => f.ext !== "mhtml" && f.format_id);
+  const isAudioOnly = (f) => f.vcodec === "none" && f.acodec && f.acodec !== "none";
+  const audio = all.filter(isAudioOnly).filter((f) => !/drc/i.test(f.format_id));
+  const bestAudio = (ext) => audio.filter((f) => !ext || f.ext === ext)
+    .sort((a, b) => (b.abr || b.tbr || 0) - (a.abr || a.tbr || 0))[0];
+  const m4a = bestAudio("m4a"), opus = bestAudio("webm"), anyAudio = bestAudio();
+
+  const defs = {
+    h264: { name: "MP4 · H.264", note: "Plays everywhere, including QuickTime and iPhone.", merge: "mp4", aud: m4a || anyAudio, asel: "ba[ext=m4a]" },
+    av1: { name: "MP4 · AV1", note: "Smallest files. Needs a recent device or a player such as VLC or IINA.", merge: "mp4", aud: m4a || anyAudio, asel: "ba[ext=m4a]" },
+    vp9: { name: "WebM · VP9", note: "Does not play in QuickTime. Use VLC, IINA or a browser.", merge: "webm", aud: opus || anyAudio, asel: "ba[ext=webm]" },
+    other: { name: "Video", note: "", merge: "", aud: anyAudio, asel: "ba" },
+  };
+
+  const best = {};
+  for (const f of all) {
+    if (!f.vcodec || f.vcodec === "none" || !f.height) continue;
+    const fam = family(f.vcodec);
+    const hdr = f.dynamic_range && f.dynamic_range !== "SDR" ? "HDR" : "";
+    const fps = f.fps > 32 ? Math.round(f.fps) : 0;
+    const q = (/^(\d+p)/.exec(f.format_note || "") || [])[1] || Math.min(f.width || f.height, f.height) + "p";
+    const key = [fam, q, fps, hdr].join("|");
+    const score = (x) => (/m3u8/.test(x.protocol || "") ? 0 : 1e12) + (x.acodec === "none" ? 1e11 : 0) + (x.height || 0) * 1e6 + (x.tbr || 0);
+    if (!best[key] || score(f) > score(best[key].f)) best[key] = { f, fam, hdr, fps, q };
+  }
+
+  const out = [];
+  for (const fam of ["h264", "av1", "vp9", "other"]) {
+    const def = defs[fam];
+    const options = Object.values(best).filter((b) => b.fam === fam)
+      .sort((a, b) => parseInt(b.q) - parseInt(a.q) || b.f.height - a.f.height || b.fps - a.fps)
+      .map(({ f, fps, hdr, q }) => {
+        const needsMerge = f.acodec === "none" && !!def.aud;
+        return {
+          quality: q + (fps ? " " + fps + "fps" : "") + (hdr ? " HDR" : ""),
+          detail: (f.width ? f.width + "×" + f.height + " · " : "") + (fam === "other" ? f.ext.toUpperCase() : def.name.split(" · ")[1]) + (f.acodec === "none" && !def.aud ? " · no sound" : ""),
+          size: sizeOf(f, dur) + (needsMerge ? sizeOf(def.aud, dur) : 0),
+          format: needsMerge ? `${f.format_id}+${def.asel}/${f.format_id}+ba` : f.format_id,
+          merge: needsMerge ? def.merge : "",
+          convert: "",
+          label: q + (fps || "") + (hdr || "") + (fam === "h264" || fam === "other" ? "" : fam),
+          needsFfmpeg: needsMerge,
+          phases: needsMerge ? 2 : 1,
+        };
+      });
+    if (options.length) out.push({ name: def.name, note: def.note, options });
+  }
+
+  const aopts = [];
+  if (anyAudio) {
+    aopts.push({ quality: "MP3", detail: "Converted from the best audio · works everywhere", size: 0, format: "ba/b", merge: "", convert: "mp3", label: "", needsFfmpeg: true, phases: 1 });
+  }
+  if (m4a) {
+    aopts.push({ quality: "M4A", detail: "Original AAC" + (m4a.abr ? " · " + Math.round(m4a.abr) + " kbps" : "") + " · no conversion", size: sizeOf(m4a, dur), format: "ba[ext=m4a]", merge: "", convert: "", label: "", needsFfmpeg: false, phases: 1 });
+  }
+  if (opus) {
+    aopts.push({ quality: "Opus", detail: "Original Opus (.webm)" + (opus.abr ? " · " + Math.round(opus.abr) + " kbps" : "") + " · no conversion", size: sizeOf(opus, dur), format: "ba[ext=webm]", merge: "", convert: "", label: "", needsFfmpeg: false, phases: 1 });
+  }
+  if (aopts.length) out.push({ name: "Audio only", note: "", options: aopts });
+  return out;
+}
+
+function render() {
+  $("hint").classList.toggle("hide", !!info || !$("error").classList.contains("hide"));
+  $("result").classList.toggle("hide", !info);
+  if (!info) { updateButtons(); return; }
+
+  $("thumb").src = info.thumbnail || "";
+  $("title").textContent = info.title || "Untitled";
+  $("sub").textContent = [info.uploader || info.channel, fmtTime(info.duration)].filter(Boolean).join(" · ");
+
+  const tabs = $("tabs"); tabs.innerHTML = "";
+  groups.forEach((g, i) => {
+    const b = document.createElement("button");
+    b.className = "tab" + (i === activeTab ? " on" : "");
+    b.textContent = g.name;
+    b.onclick = () => { if (busy) return; activeTab = i; selected = firstUsable(g); render(); };
+    tabs.appendChild(b);
+  });
+
+  const g = groups[activeTab];
+  let note = g ? g.note : "";
+  if (g && g.name === "MP4 · H.264") {
+    const top = (grp) => Math.max(0, ...grp.options.map((o) => parseInt(o.quality) || 0));
+    const higher = groups.filter((x) => x !== g && x.name !== "Audio only" && top(x) > top(g)).map((x) => x.name);
+    if (higher.length) note += " Higher resolutions are under " + higher.join(" and ") + ".";
+  }
+  $("tabnote").textContent = note;
+
+  const list = $("list"); list.innerHTML = "";
+  (g ? g.options : []).forEach((o) => {
+    const usable = env.ffmpeg || !o.needsFfmpeg;
+    const row = document.createElement("div");
+    row.className = "opt" + (o === selected ? " on" : "") + (usable ? "" : " off");
+    row.innerHTML = '<span class="dot"></span><span class="q"></span><span class="d"></span><span class="z"></span>';
+    row.children[1].textContent = o.quality;
+    row.children[2].textContent = o.detail + (usable ? "" : " · needs ffmpeg");
+    row.children[3].textContent = fmtSize(o.size);
+    row.onclick = () => { if (busy || !usable) return; selected = o; render(); };
+    list.appendChild(row);
+  });
+
+  const notes = [];
+  if (!env.ffmpeg) notes.push("ffmpeg was not found, so options that combine separate video and sound are turned off. Install it with: brew install ffmpeg");
+  if (!env.js_runtime) notes.push("deno was not found, so YouTube may hide some formats. Install it with: brew install deno");
+  $("envnote").textContent = notes.join(" ");
+  updateButtons();
+}
+
+const firstUsable = (g) => g.options.find((o) => env.ffmpeg || !o.needsFfmpeg) || null;
+
+function updateButtons() {
+  $("download").disabled = busy || !selected;
+  $("fetch").disabled = busy;
+  $("choose").disabled = busy;
+  $("cancel").classList.toggle("hide", !busy || !info);
+}
+
+function setStatus(text, cls) {
+  const s = $("status"); s.textContent = text; s.className = "status" + (cls ? " " + cls : "");
+}
+
+function showError(msg) {
+  $("error").textContent = msg; $("error").classList.remove("hide");
+  $("hint").classList.add("hide");
+}
+
+async function fetchInfo() {
+  const url = $("url").value.trim();
+  if (!url || busy) return;
+  if (!/^https?:\/\//i.test(url)) { info = null; render(); showError("That does not look like a link. It should start with https://"); return; }
+  busy = true; info = null; selected = null; lastPath = "";
+  $("error").classList.add("hide"); $("show").classList.add("hide"); $("play").classList.add("hide");
+  render(); $("hint").classList.add("hide");
+  $("bar").style.display = "block"; $("bar").classList.add("busy");
+  setStatus("Looking up the video…");
+  try {
+    const d = JSON.parse(await invoke("fetch_info", { url }));
+    if (d._type === "playlist") throw "This link is a playlist. Paste the link of a single video.";
+    const gs = buildGroups(d);
+    if (!gs.length) throw "No downloadable formats were found for this link.";
+    info = d; info._url = url; groups = gs; activeTab = 0; selected = firstUsable(gs[0]);
+    setStatus("");
+  } catch (e) {
+    showError(String(e)); setStatus("");
+  }
+  busy = false;
+  $("bar").style.display = "none"; $("bar").classList.remove("busy");
+  render();
+}
+
+async function startDownload() {
+  if (!selected || busy || !info) return;
+  busy = true; phase = 0; phases = selected.phases; lastDownloaded = 0; lastPath = "";
+  $("show").classList.add("hide"); $("play").classList.add("hide");
+  $("bar").style.display = "block"; $("bar").classList.add("busy"); $("fill").style.width = "0";
+  setStatus("Starting…"); updateButtons();
+  try {
+    await invoke("start_download", {
+      url: info._url, format: selected.format, merge: selected.merge,
+      audioConvert: selected.convert, label: selected.label, outDir,
+    });
+  } catch (e) {
+    busy = false; $("bar").style.display = "none"; setStatus(String(e), "bad"); updateButtons();
+  }
+}
+
+listen("dl-progress", (e) => {
+  if (!busy) return;
+  const p = e.payload;
+  if (p.downloaded < lastDownloaded && phase < phases - 1) phase++;
+  lastDownloaded = p.downloaded;
+  const part = p.total > 0 ? Math.min(1, p.downloaded / p.total) : 0;
+  const overall = (phase + part) / phases;
+  const finishing = phase === phases - 1 && part >= 1;
+  $("bar").classList.toggle("busy", finishing);
+  $("fill").style.width = (overall * 100).toFixed(1) + "%";
+  if (finishing) { setStatus("Finishing…"); return; }
+  const what = phases > 1 ? (phase === 0 ? "Downloading video" : "Downloading sound") : "Downloading";
+  const speed = p.speed > 0 ? " · " + fmtSize(p.speed).slice(1) + "/s" : "";
+  const eta = p.eta > 0 ? " · " + fmtTime(p.eta) + " left" : "";
+  setStatus(what + " · " + Math.round(overall * 100) + "%" + speed + eta);
+});
+
+listen("dl-done", (e) => {
+  const r = e.payload;
+  busy = false;
+  $("bar").style.display = "none"; $("bar").classList.remove("busy");
+  if (r.ok) {
+    lastPath = r.path;
+    setStatus("Saved: " + r.path.split("/").pop(), "ok");
+    $("show").classList.remove("hide"); $("play").classList.remove("hide");
+  } else if (r.cancelled) {
+    setStatus("Download cancelled.");
+  } else {
+    setStatus(r.error || "The download failed.", "bad");
+  }
+  updateButtons();
+});
+
+$("fetch").onclick = fetchInfo;
+$("url").addEventListener("keydown", (e) => { if (e.key === "Enter") fetchInfo(); });
+$("url").addEventListener("paste", () => setTimeout(fetchInfo, 0));
+$("paste").onclick = async () => {
+  try { const t = await navigator.clipboard.readText(); if (t) { $("url").value = t.trim(); fetchInfo(); } }
+  catch { $("url").focus(); }
+};
+$("download").onclick = startDownload;
+$("cancel").onclick = () => invoke("cancel_download");
+$("show").onclick = () => lastPath && invoke("reveal", { path: lastPath });
+$("play").onclick = () => lastPath && invoke("open_file", { path: lastPath });
+$("choose").onclick = async () => {
+  const p = await invoke("pick_folder");
+  if (p) { outDir = p; $("dir").textContent = p; try { localStorage.setItem("outDir", p); } catch {} }
+};
+
+(async () => {
+  env = await invoke("env_status");
+  let saved = ""; try { saved = localStorage.getItem("outDir") || ""; } catch {}
+  outDir = saved || env.download_dir;
+  $("dir").textContent = outDir;
+})();
+</script>
+</body>
+</html>

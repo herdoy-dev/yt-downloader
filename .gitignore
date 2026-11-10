@@ -1,0 +1,9 @@
+# Build output
+src-tauri/target/
+src-tauri/gen/
+*.dmg
+
+# Downloaded by build.sh (36 MB)
+src-tauri/binaries/
+
+.DS_Store
