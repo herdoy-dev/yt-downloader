@@ -55,9 +55,41 @@ fn ytdlp_path() -> Result<PathBuf, String> {
     find_tool("yt-dlp").ok_or_else(|| "yt-dlp was not found.".to_string())
 }
 
-fn base_cmd() -> Result<Command, String> {
+/// Browsers yt-dlp can borrow sign-in cookies from, as (yt-dlp name, label, app).
+const BROWSERS: [(&str, &str, &str); 8] = [
+    ("brave", "Brave", "Brave Browser.app"),
+    ("chrome", "Chrome", "Google Chrome.app"),
+    ("firefox", "Firefox", "Firefox.app"),
+    ("edge", "Edge", "Microsoft Edge.app"),
+    ("vivaldi", "Vivaldi", "Vivaldi.app"),
+    ("opera", "Opera", "Opera.app"),
+    ("chromium", "Chromium", "Chromium.app"),
+    ("safari", "Safari", "Safari.app"),
+];
+
+fn installed_browsers() -> Vec<Browser> {
+    let home = std::env::var_os("HOME").map(PathBuf::from);
+    BROWSERS
+        .iter()
+        .filter(|(_, _, app)| {
+            Path::new("/Applications").join(app).exists()
+                || Path::new("/System/Applications").join(app).exists()
+                || Path::new("/System/Volumes/Preboot/Cryptexes/App/System/Applications").join(app).exists()
+                || home.as_ref().is_some_and(|h| h.join("Applications").join(app).exists())
+        })
+        .map(|(id, name, _)| Browser { id: id.to_string(), name: name.to_string() })
+        .collect()
+}
+
+fn base_cmd(cookies: &str) -> Result<Command, String> {
     let mut cmd = Command::new(ytdlp_path()?);
     cmd.env("PATH", path_env()).arg("--no-playlist");
+    if !cookies.is_empty() {
+        if !BROWSERS.iter().any(|(id, _, _)| *id == cookies) {
+            return Err(format!("Unknown browser: {cookies}"));
+        }
+        cmd.args(["--cookies-from-browser", cookies]);
+    }
     if let Some(ffmpeg) = find_tool("ffmpeg") {
         if let Some(dir) = ffmpeg.parent() {
             cmd.arg("--ffmpeg-location").arg(dir);
@@ -88,10 +120,17 @@ struct Downloads {
 }
 
 #[derive(Serialize)]
+struct Browser {
+    id: String,
+    name: String,
+}
+
+#[derive(Serialize)]
 struct Env {
     ffmpeg: bool,
     js_runtime: bool,
     download_dir: String,
+    browsers: Vec<Browser>,
 }
 
 #[tauri::command]
@@ -105,14 +144,15 @@ fn env_status(app: AppHandle) -> Env {
         ffmpeg: find_tool("ffmpeg").is_some(),
         js_runtime: find_tool("deno").is_some() || find_tool("node").is_some(),
         download_dir,
+        browsers: installed_browsers(),
     }
 }
 
 /// Returns yt-dlp's JSON description of the video (title, formats, ...).
 #[tauri::command]
-async fn fetch_info(url: String) -> Result<String, String> {
+async fn fetch_info(url: String, cookies: String) -> Result<String, String> {
     tauri::async_runtime::spawn_blocking(move || {
-        let out = base_cmd()?
+        let out = base_cmd(&cookies)?
             .args(["-J", "--no-warnings", "--", &url])
             .stdin(Stdio::null())
             .output()
@@ -152,6 +192,7 @@ fn start_download(
     audio_convert: String,
     label: String,
     out_dir: String,
+    cookies: String,
 ) -> Result<(), String> {
     if state.pid.lock().unwrap().is_some() {
         return Err("A download is already running.".into());
@@ -163,7 +204,7 @@ fn start_download(
         format!("%(title).120B [{label}].%(ext)s")
     };
 
-    let mut cmd = base_cmd()?;
+    let mut cmd = base_cmd(&cookies)?;
     cmd.args(["--newline", "--progress", "--no-mtime", "--force-overwrites"])
         .args(["-f", &format])
         .args(["-P", &out_dir])

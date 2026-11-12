@@ -41,7 +41,7 @@
   button.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-text); }
   main { flex: 1; overflow-y: auto; padding: 4px 20px 16px; }
   .hint { color: var(--muted); text-align: center; margin-top: 70px; }
-  .error { color: var(--accent); background: var(--sel); padding: 10px 12px; border-radius: 9px; -webkit-user-select: text; user-select: text; }
+  .error { white-space: pre-line; color: var(--accent); background: var(--sel); padding: 10px 12px; border-radius: 9px; -webkit-user-select: text; user-select: text; }
   .notice { color: var(--muted); font-size: 12.5px; margin: 8px 2px; }
   .meta { display: flex; gap: 14px; align-items: center; background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 12px; }
   .meta img { width: 128px; height: 72px; object-fit: cover; border-radius: 7px; background: #000; flex: none; }
@@ -72,6 +72,13 @@
   .bar i { display: block; height: 100%; width: 0; background: var(--accent); transition: width 0.2s; }
   .bar.busy i { width: 35% !important; animation: slide 1.1s infinite ease-in-out; }
   @keyframes slide { 0% { margin-left: -35%; } 100% { margin-left: 100%; } }
+  .pill { flex: none; align-self: center; padding: 4px 10px; border-radius: 999px; font-size: 12px; font-weight: 700; color: #fff; background: var(--muted); }
+  .pill[data-p=youtube] { background: #e0282e; }
+  .pill[data-p=facebook] { background: #1877f2; }
+  .pill[data-p=instagram] { background: linear-gradient(45deg, #f58529, #dd2a7b 55%, #8134af); }
+  .pill[data-p=tiktok], .pill[data-p=x] { background: #111; box-shadow: inset 0 0 0 1px #444; }
+  .meta .s .pill { display: inline-block; padding: 1px 8px; font-size: 11px; margin-right: 6px; vertical-align: 1px; }
+  .saverow select { font: inherit; color: var(--text); background: var(--card); border: 1px solid var(--line); border-radius: 7px; padding: 3px 6px; }
   .hide { display: none !important; }
 </style>
 </head>
@@ -79,7 +86,8 @@
 <header>
   <h1>TubeGrab</h1>
   <div class="urlrow">
-    <input id="url" type="text" placeholder="Paste a YouTube link here" autocomplete="off" spellcheck="false" autofocus>
+    <span id="platform" class="pill hide"></span>
+    <input id="url" type="text" placeholder="Paste a YouTube, Facebook, Instagram, TikTok or X link" autocomplete="off" spellcheck="false" autofocus>
     <button id="clear" title="Clear and start a new link">Clear</button>
     <button id="paste">Paste</button>
     <button id="fetch" class="primary">Get options</button>
@@ -87,7 +95,7 @@
 </header>
 
 <main>
-  <div id="hint" class="hint">Paste a video link and press <b>Get options</b> to see the available downloads.</div>
+  <div id="hint" class="hint">Paste a YouTube, Facebook, Instagram, TikTok or X link and press <b>Get options</b>.<br>The site is detected automatically.</div>
   <div id="error" class="error hide"></div>
   <div id="result" class="hide">
     <div class="meta">
@@ -109,6 +117,8 @@
     <span>Save to</span>
     <span id="dir" class="p"></span>
     <button id="choose">Change…</button>
+    <span title="Some posts (most Instagram, private Facebook) can only be downloaded while signed in. Your browser's sign-in is used for those.">Sign-in from</span>
+    <select id="cookies"><option value="">None</option></select>
   </div>
   <div id="bar" class="bar"><i id="fill"></i></div>
   <div class="actrow">
@@ -125,7 +135,7 @@ const { invoke } = window.__TAURI__.core;
 const { listen } = window.__TAURI__.event;
 const $ = (id) => document.getElementById(id);
 
-let env = { ffmpeg: true, js_runtime: true, download_dir: "" };
+let env = { ffmpeg: true, js_runtime: true, download_dir: "", browsers: [] };
 let outDir = "";
 let info = null;       // yt-dlp JSON for the current video
 let groups = [];       // [{ key, name, note, options: [...] }]
@@ -154,6 +164,7 @@ function family(vcodec) {
   if (v.startsWith("avc") || v.startsWith("h264")) return "h264";
   if (v.startsWith("vp9") || v.startsWith("vp09")) return "vp9";
   if (v.startsWith("av01") || v.startsWith("av1")) return "av1";
+  if (v.startsWith("h265") || v.startsWith("hevc") || v.startsWith("hvc1") || v.startsWith("hev1") || v.startsWith("bytevc1")) return "h265";
   return "other";
 }
 
@@ -161,7 +172,7 @@ function family(vcodec) {
 function buildGroups(d) {
   const dur = d.duration || 0;
   const all = (d.formats || []).filter((f) => f.ext !== "mhtml" && f.format_id);
-  const isAudioOnly = (f) => f.vcodec === "none" && f.acodec && f.acodec !== "none";
+  const isAudioOnly = (f) => f.vcodec === "none" && f.acodec !== "none";
   const audio = all.filter(isAudioOnly).filter((f) => !/drc/i.test(f.format_id));
   const bestAudio = (ext) => audio.filter((f) => !ext || f.ext === ext)
     .sort((a, b) => (b.abr || b.tbr || 0) - (a.abr || a.tbr || 0))[0];
@@ -170,37 +181,42 @@ function buildGroups(d) {
   const defs = {
     h264: { name: "MP4 · H.264", note: "Plays everywhere, including QuickTime and iPhone.", merge: "mp4", aud: m4a || anyAudio, asel: "ba[ext=m4a]" },
     av1: { name: "MP4 · AV1", note: "Smallest files. Needs a recent device or a player such as VLC or IINA.", merge: "mp4", aud: m4a || anyAudio, asel: "ba[ext=m4a]" },
+    h265: { name: "MP4 · H.265", note: "Smaller files. Plays in QuickTime on Macs from 2017 on.", merge: "mp4", aud: m4a || anyAudio, asel: "ba[ext=m4a]" },
     vp9: { name: "WebM · VP9", note: "Does not play in QuickTime. Use VLC, IINA or a browser.", merge: "webm", aud: opus || anyAudio, asel: "ba[ext=webm]" },
     other: { name: "Video", note: "", merge: "", aud: anyAudio, asel: "ba" },
   };
 
   const best = {};
   for (const f of all) {
-    if (!f.vcodec || f.vcodec === "none" || !f.height) continue;
-    const fam = family(f.vcodec);
+    if (f.vcodec === "none" || isAudioOnly(f)) continue;
+    // Facebook and some others list formats like "hd"/"sd" with no codec or size info.
+    if (!f.height && (f.vcodec || !/^(hd|sd)$/i.test(f.format_note || f.format_id))) continue;
+    const fam = !f.vcodec && f.ext === "mp4" ? "h264" : family(f.vcodec);
     const hdr = f.dynamic_range && f.dynamic_range !== "SDR" ? "HDR" : "";
     const fps = f.fps > 32 ? Math.round(f.fps) : 0;
-    const q = (/^(\d+p)/.exec(f.format_note || "") || [])[1] || Math.min(f.width || f.height, f.height) + "p";
+    const q = !f.height ? (f.format_note || f.format_id).toUpperCase()
+      : (/^(\d+p)/.exec(f.format_note || "") || [])[1] || Math.min(f.width || f.height, f.height) + "p";
     const key = [fam, q, fps, hdr].join("|");
     const score = (x) => (/m3u8/.test(x.protocol || "") ? 0 : 1e12) + (x.acodec === "none" ? 1e11 : 0) + (x.height || 0) * 1e6 + (x.tbr || 0);
     if (!best[key] || score(f) > score(best[key].f)) best[key] = { f, fam, hdr, fps, q };
   }
 
   const out = [];
-  for (const fam of ["h264", "av1", "vp9", "other"]) {
+  const rank = (q) => parseInt(q) || (q === "HD" ? 720 : q === "SD" ? 360 : 0);
+  for (const fam of ["h264", "h265", "av1", "vp9", "other"]) {
     const def = defs[fam];
     const options = Object.values(best).filter((b) => b.fam === fam)
-      .sort((a, b) => parseInt(b.q) - parseInt(a.q) || b.f.height - a.f.height || b.fps - a.fps)
+      .sort((a, b) => rank(b.q) - rank(a.q) || (b.f.height || 0) - (a.f.height || 0) || b.fps - a.fps)
       .map(({ f, fps, hdr, q }) => {
         const needsMerge = f.acodec === "none" && !!def.aud;
         return {
           quality: q + (fps ? " " + fps + "fps" : "") + (hdr ? " HDR" : ""),
-          detail: (f.width ? f.width + "×" + f.height + " · " : "") + (fam === "other" ? f.ext.toUpperCase() : def.name.split(" · ")[1]) + (f.acodec === "none" && !def.aud ? " · no sound" : ""),
+          detail: (f.width ? f.width + "×" + f.height + " · " : "") + (fam === "other" ? (f.ext || "video").toUpperCase() : def.name.split(" · ")[1]) + (f.acodec === "none" && !def.aud ? " · no sound" : ""),
           size: sizeOf(f, dur) + (needsMerge ? sizeOf(def.aud, dur) : 0),
           format: needsMerge ? `${f.format_id}+${def.asel}/${f.format_id}+ba` : f.format_id,
           merge: needsMerge ? def.merge : "",
           convert: "",
-          label: q + (fps || "") + (hdr || "") + (fam === "h264" || fam === "other" ? "" : fam),
+          label: q.replace(/\W/g, "") + (fps || "") + (hdr || "") + (fam === "h264" || fam === "other" ? "" : fam),
           needsFfmpeg: needsMerge,
           phases: needsMerge ? 2 : 1,
         };
@@ -208,9 +224,17 @@ function buildGroups(d) {
     if (options.length) out.push({ name: def.name, note: def.note, options });
   }
 
+  // Nothing recognisable: let yt-dlp pick the best it can get.
+  if (!out.length && all.length) {
+    out.push({ name: "Video", note: "This site does not list its qualities, so the best available one is downloaded.", options: [
+      { quality: "Best", detail: "Highest quality available", size: 0, format: "bv*+ba/b", merge: "mp4", convert: "", label: "", needsFfmpeg: false, phases: 1 },
+    ] });
+  }
+
   const aopts = [];
-  if (anyAudio) {
-    aopts.push({ quality: "MP3", detail: "Converted from the best audio · works everywhere", size: 0, format: "ba/b", merge: "", convert: "mp3", label: "", needsFfmpeg: true, phases: 1 });
+  // Sites like TikTok and Facebook only offer video with sound built in; MP3 is extracted from that.
+  if (anyAudio || out.length) {
+    aopts.push({ quality: "MP3", detail: "Converted from the best audio · works everywhere", size: 0, format: anyAudio ? "ba/b" : "b", merge: "", convert: "mp3", label: "", needsFfmpeg: true, phases: 1 });
   }
   if (m4a) {
     aopts.push({ quality: "M4A", detail: "Original AAC" + (m4a.abr ? " · " + Math.round(m4a.abr) + " kbps" : "") + " · no conversion", size: sizeOf(m4a, dur), format: "ba[ext=m4a]", merge: "", convert: "", label: "", needsFfmpeg: false, phases: 1 });
@@ -228,8 +252,15 @@ function render() {
   if (!info) { updateButtons(); return; }
 
   $("thumb").src = info.thumbnail || "";
-  $("title").textContent = info.title || "Untitled";
+  $("thumb").classList.toggle("hide", !info.thumbnail);
+  $("title").textContent = info.title || info.description || "Untitled";
   $("sub").textContent = [info.uploader || info.channel, fmtTime(info.duration)].filter(Boolean).join(" · ");
+  const pl = info._platform;
+  if (pl.id) {
+    const b = document.createElement("span");
+    b.className = "pill"; b.dataset.p = pl.id; b.textContent = pl.name;
+    $("sub").prepend(b);
+  }
 
   const tabs = $("tabs"); tabs.innerHTML = "";
   groups.forEach((g, i) => {
@@ -264,7 +295,7 @@ function render() {
 
   const notes = [];
   if (!env.ffmpeg) notes.push("ffmpeg was not found, so options that combine separate video and sound are turned off. Install it with: brew install ffmpeg");
-  if (!env.js_runtime) notes.push("deno was not found, so YouTube may hide some formats. Install it with: brew install deno");
+  if (!env.js_runtime && info._platform.id === "youtube") notes.push("deno was not found, so YouTube may hide some formats. Install it with: brew install deno");
   $("envnote").textContent = notes.join(" ");
   updateButtons();
 }
@@ -277,6 +308,7 @@ function updateButtons() {
   $("clear").disabled = busy;
   $("paste").disabled = busy;
   $("choose").disabled = busy;
+  $("cookies").disabled = busy;
   $("cancel").classList.toggle("hide", !busy || !info);
 }
 
@@ -289,24 +321,72 @@ function showError(msg) {
   $("hint").classList.add("hide");
 }
 
+const PLATFORMS = [
+  { id: "youtube", name: "YouTube", hosts: ["youtube.com", "youtu.be", "youtube-nocookie.com"] },
+  { id: "facebook", name: "Facebook", hosts: ["facebook.com", "fb.watch", "fb.com"] },
+  { id: "instagram", name: "Instagram", hosts: ["instagram.com", "instagr.am"] },
+  { id: "tiktok", name: "TikTok", hosts: ["tiktok.com"] },
+  { id: "x", name: "X", hosts: ["x.com", "twitter.com"] },
+];
+
+// Works out the site from the link; unknown sites are still tried with yt-dlp.
+function detectPlatform(url) {
+  let host = "";
+  try { host = new URL(url).hostname.toLowerCase(); } catch { return { id: "", name: "" }; }
+  const p = PLATFORMS.find((x) => x.hosts.some((h) => host === h || host.endsWith("." + h)));
+  return p || { id: "", name: host.replace(/^www\./, "") };
+}
+
+function showPlatform() {
+  const raw = $("url").value.trim();
+  const p = /^https?:\/\//i.test(raw) ? detectPlatform(raw) : { id: "", name: "" };
+  const el = $("platform");
+  el.textContent = p.name; el.dataset.p = p.id;
+  el.classList.toggle("hide", !p.name);
+}
+
+// Errors that usually mean the post is only visible when signed in.
+const needsLogin = (msg) => /cookies|log ?in|sign ?in|empty media|private|registered users|authenticat|Cannot parse data/i.test(msg);
+
 async function fetchInfo() {
-  const url = $("url").value.trim();
+  let url = $("url").value.trim();
   if (!url || busy) return;
+  if (!/^https?:\/\//i.test(url) && /^[\w-]+(\.[\w-]+)+\//.test(url)) { url = "https://" + url; $("url").value = url; }
+  showPlatform();
   if (!/^https?:\/\//i.test(url)) { info = null; render(); showError("That does not look like a link. It should start with https://"); return; }
+  const platform = detectPlatform(url);
   busy = true; info = null; selected = null; lastPath = "";
   $("error").classList.add("hide"); $("show").classList.add("hide"); $("play").classList.add("hide");
   render(); $("hint").classList.add("hide");
   $("bar").style.display = "block"; $("bar").classList.add("busy");
-  setStatus("Looking up the video…");
+  setStatus("Looking up the " + (platform.id ? platform.name + " " : "") + "video…");
   try {
-    const d = JSON.parse(await invoke("fetch_info", { url }));
-    if (d._type === "playlist") throw "This link is a playlist. Paste the link of a single video.";
+    const cookies = $("cookies").value;
+    let d = JSON.parse(await invoke("fetch_info", { url, cookies }));
+    let entryUrl = "";
+    if (d._type === "playlist") {
+      const one = (d.entries || []).filter((x) => x && x.formats);
+      if (one.length !== 1) throw "This link has several videos (a playlist or a multi-video post). Paste the link of a single video.";
+      d = one[0]; entryUrl = d.webpage_url || "";
+    }
     const gs = buildGroups(d);
-    if (!gs.length) throw "No downloadable formats were found for this link.";
-    info = d; info._url = url; groups = gs; activeTab = 0; selected = firstUsable(gs[0]);
+    if (!gs.length) throw "No downloadable video was found at this link. It may be a photo post, or the video may be private.";
+    info = d; info._url = entryUrl || url;
+    info._platform = platform; info._cookies = cookies; groups = gs; activeTab = 0; selected = firstUsable(gs[0]);
     setStatus("");
   } catch (e) {
-    showError(String(e)); setStatus("");
+    let msg = String(e);
+    const site = platform.id ? platform.name : "This site";
+    const ck = $("cookies").value, ckName = ck ? $("cookies").selectedOptions[0].textContent : "";
+    if (!ck && (needsLogin(msg) || platform.id === "instagram")) {
+      msg = site + " only shows this video to signed-in users. Sign in to " + (platform.name || "the site") +
+        " in your browser, then choose that browser under \u201cSign-in from\u201d below (macOS may ask once to allow access)." +
+        "\n\nDetails: " + msg;
+    } else if (ck && platform.id) {
+      msg = "Could not get this video even with your " + ckName + " sign-in. Check that you are signed in to " + platform.name +
+        " in " + ckName + " and can play the video there.\n\nDetails: " + msg;
+    }
+    showError(msg); setStatus("");
   }
   busy = false;
   $("bar").style.display = "none"; $("bar").classList.remove("busy");
@@ -322,7 +402,7 @@ async function startDownload() {
   try {
     await invoke("start_download", {
       url: info._url, format: selected.format, merge: selected.merge,
-      audioConvert: selected.convert, label: selected.label, outDir,
+      audioConvert: selected.convert, label: selected.label, outDir, cookies: info._cookies || "",
     });
   } catch (e) {
     busy = false; $("bar").style.display = "none"; setStatus(String(e), "bad"); updateButtons();
@@ -365,7 +445,7 @@ listen("dl-done", (e) => {
 $("fetch").onclick = fetchInfo;
 $("clear").onclick = () => {
   if (busy) return;
-  $("url").value = "";
+  $("url").value = ""; showPlatform();
   info = null; groups = []; selected = null; lastPath = "";
   $("error").classList.add("hide"); $("show").classList.add("hide"); $("play").classList.add("hide");
   setStatus("");
@@ -373,6 +453,9 @@ $("clear").onclick = () => {
   $("url").focus();
 };
 $("url").addEventListener("keydown", (e) => { if (e.key === "Enter") fetchInfo(); });
+$("url").addEventListener("input", showPlatform);
+const saveCookies = () => { try { localStorage.setItem("cookies", $("cookies").value); } catch {} };
+$("cookies").onchange = () => { saveCookies(); if (!info && $("url").value.trim()) fetchInfo(); };
 $("url").addEventListener("paste", () => setTimeout(fetchInfo, 0));
 $("paste").onclick = async () => {
   if (busy) return;
@@ -395,6 +478,11 @@ $("choose").onclick = async () => {
   let saved = ""; try { saved = localStorage.getItem("outDir") || ""; } catch {}
   outDir = saved || env.download_dir;
   $("dir").textContent = outDir;
+  for (const b of env.browsers) {
+    const o = document.createElement("option"); o.value = b.id; o.textContent = b.name; $("cookies").appendChild(o);
+  }
+  let ck = ""; try { ck = localStorage.getItem("cookies") || ""; } catch {}
+  if (env.browsers.some((b) => b.id === ck)) $("cookies").value = ck;
 })();
 </script>
 </body>
