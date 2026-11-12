@@ -331,7 +331,7 @@ fn selftest_report() {}
 /// the real UI code through a fetch and a download without showing a window.
 #[cfg(feature = "selftest")]
 fn selftest(app: &mut tauri::App) {
-    let (Ok(url), Ok(dir)) = (std::env::var("TUBEGRAB_SELFTEST_URL"), std::env::var("TUBEGRAB_SELFTEST_DIR")) else {
+    let (Ok(url), Ok(dir)) = (std::env::var("VIDLASSO_SELFTEST_URL"), std::env::var("VIDLASSO_SELFTEST_DIR")) else {
         return;
     };
     app.set_activation_policy(tauri::ActivationPolicy::Accessory);
@@ -381,5 +381,5 @@ fn main() {
             selftest_report
         ])
         .run(tauri::generate_context!())
-        .expect("error while running TubeGrab");
+        .expect("error while running Vidlasso");
 }

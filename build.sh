@@ -1,5 +1,5 @@
 #!/bin/bash
-# Builds TubeGrab.app and packs it into a compressed TubeGrab.dmg.
+# Builds Vidlasso.app and packs it into a compressed Vidlasso.dmg.
 set -euo pipefail
 cd "$(dirname "$0")"
 
@@ -13,11 +13,11 @@ fi
 
 npx --yes @tauri-apps/cli@latest build --bundles app
 
-APP=src-tauri/target/release/bundle/macos/TubeGrab.app
+APP=src-tauri/target/release/bundle/macos/Vidlasso.app
 STAGE=$(mktemp -d)
 cp -R "$APP" "$STAGE/"
 ln -s /Applications "$STAGE/Applications"
-rm -f TubeGrab.dmg
-hdiutil create -volname TubeGrab -srcfolder "$STAGE" -ov -format ULMO TubeGrab.dmg
+rm -f Vidlasso.dmg
+hdiutil create -volname Vidlasso -srcfolder "$STAGE" -ov -format ULMO Vidlasso.dmg
 rm -rf "$STAGE"
-ls -lh TubeGrab.dmg
+ls -lh Vidlasso.dmg

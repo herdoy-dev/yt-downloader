@@ -1,8 +1,8 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "TubeGrab",
+  "productName": "Vidlasso",
   "version": "1.0.0",
-  "identifier": "com.tubegrab.app",
+  "identifier": "com.vidlasso.app",
   "build": {
     "frontendDist": "../ui"
   },
@@ -11,7 +11,7 @@
     "windows": [
       {
         "label": "main",
-        "title": "TubeGrab",
+        "title": "Vidlasso",
         "width": 720,
         "height": 760,
         "minWidth": 520,

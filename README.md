@@ -1,4 +1,4 @@
-# yt-downloader (TubeGrab)
+# Vidlasso
 
 A small macOS desktop app for downloading videos from YouTube, Facebook,
 Instagram, TikTok and X (Twitter). Paste a link into the single box — the site is detected
@@ -42,8 +42,8 @@ Needs Rust and Node.js.
 ./build.sh
 ```
 
-This downloads yt-dlp if needed, builds `TubeGrab.app` and packs it into
-`TubeGrab.dmg`.
+This downloads yt-dlp if needed, builds `Vidlasso.app` and packs it into
+`Vidlasso.dmg`.
 
 The app is not notarized. On another Mac, right-click the app and choose Open
 the first time.
