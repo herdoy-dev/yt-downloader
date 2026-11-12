@@ -182,7 +182,9 @@ function buildGroups(d) {
     h264: { name: "MP4 · H.264", note: "Plays everywhere, including QuickTime and iPhone.", merge: "mp4", aud: m4a || anyAudio, asel: "ba[ext=m4a]" },
     av1: { name: "MP4 · AV1", note: "Smallest files. Needs a recent device or a player such as VLC or IINA.", merge: "mp4", aud: m4a || anyAudio, asel: "ba[ext=m4a]" },
     h265: { name: "MP4 · H.265", note: "Smaller files. Plays in QuickTime on Macs from 2017 on.", merge: "mp4", aud: m4a || anyAudio, asel: "ba[ext=m4a]" },
-    vp9: { name: "WebM · VP9", note: "Does not play in QuickTime. Use VLC, IINA or a browser.", merge: "webm", aud: opus || anyAudio, asel: "ba[ext=webm]" },
+    vp9: opus || !anyAudio
+      ? { name: "WebM · VP9", note: "Does not play in QuickTime. Use VLC, IINA or a browser.", merge: "webm", aud: opus || anyAudio, asel: "ba[ext=webm]" }
+      : { name: "MP4 · VP9", note: "Does not play in QuickTime. Use VLC, IINA or a browser.", merge: "mp4", aud: anyAudio, asel: "ba" },
     other: { name: "Video", note: "", merge: "", aud: anyAudio, asel: "ba" },
   };
 
@@ -222,6 +224,16 @@ function buildGroups(d) {
         };
       });
     if (options.length) out.push({ name: def.name, note: def.note, options });
+  }
+
+  // Instagram also lists ready-made MP4s (video + sound) with no details at all.
+  // yt-dlp orders formats worst to best, so the last one is the best.
+  const plain = all.filter((f) => f.ext === "mp4" && !f.vcodec && !f.acodec && !f.height && !/^(hd|sd)$/i.test(f.format_note || f.format_id));
+  if (plain.length && !out.some((g) => g.name === "MP4 · H.264")) {
+    const f = plain[plain.length - 1];
+    out.unshift({ name: "MP4 · H.264", note: "Plays everywhere, including QuickTime and iPhone.", options: [
+      { quality: "Original", detail: "The site's own MP4 with sound", size: sizeOf(f, dur), format: f.format_id + "/b[ext=mp4]/b", merge: "", convert: "", label: "", needsFfmpeg: false, phases: 1 },
+    ] });
   }
 
   // Nothing recognisable: let yt-dlp pick the best it can get.
